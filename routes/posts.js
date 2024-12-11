@@ -9,11 +9,24 @@ const Comment = require('../models/Comment')
 const checkPostStatus = require('../middleware/checkPostStatus')
 const { postValidation, commentValidation } = require('../validations/validations');
 
+// Helper function to add time left information to post(s)
+const addTimeLeftToPost = (post) => {
+    const timeLeft = post.expiresAt - new Date();
+    return {
+        ...post.toObject(),
+        timeLeftMs: Math.max(0, timeLeft),
+        timeLeftHuman: timeLeft > 0 ? 
+            Math.floor(timeLeft / (1000 * 60)) + ' minutes' : 
+            'Expired'
+    };
+};
 
 // Retrieve all posts with populated references
+
+
 router.get('/', verifyToken, async (req, res) => {
     try {
-        const posts = await Post.find()
+        const posts = await Post.find().limit(20)
             .populate('author', '_id username')  // Populate author details (only _id and username)
             .populate('topics', 'name')          // Populate topic names
             .populate('likes', '_id username')   // Populate likes with user details
@@ -25,7 +38,8 @@ router.get('/', verifyToken, async (req, res) => {
                     select: '_id username'       // Only select _id and username fields
                 }
             });
-        res.json(posts);
+        const postsWithTimeLeft = posts.map(post => addTimeLeftToPost(post));
+        res.json(postsWithTimeLeft);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -49,7 +63,7 @@ router.get('/:postId', verifyToken, async (req, res) => {
         if (!post) {
             return res.status(404).json({ message: 'Post not found' });
         }
-        res.json(post);
+        res.json(addTimeLeftToPost(post));
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -79,7 +93,7 @@ router.post('/create', verifyToken, async (req, res) => {
         });
 
         const savedPost = await post.save();
-        res.status(201).json(savedPost);
+        res.status(201).json(addTimeLeftToPost(savedPost));
     } catch (error) {
         console.error('Post creation error:', error);
         res.status(400).json({ message: error.message });
@@ -104,14 +118,26 @@ router.post('/:postId/comment', [verifyToken, checkPostStatus], async (req, res)
         post.comments.push(savedComment._id);
         await post.save();
 
-        res.json(savedComment);
+        const updatedPost = await Post.findById(post._id)
+            .populate('author', '_id username')
+            .populate('topics', 'name')
+            .populate('likes', '_id username')
+            .populate('dislikes', '_id username')
+            .populate({
+                path: 'comments',
+                populate: {
+                    path: 'author',
+                    select: '_id username'
+                }
+            });
+        res.json(addTimeLeftToPost(updatedPost));
     } catch (error) {
         res.status(400).json({ message: error.message });
     }
 });
 
 // Like a post
-router.post('/:postId/like', [verifyToken, checkPostStatus], async (req, res) => {
+router.patch('/:postId/like', [verifyToken, checkPostStatus], async (req, res) => {
     try {
         const post = await Post.findById(req.params.postId);
         const userId = req.user._id;
@@ -129,14 +155,26 @@ router.post('/:postId/like', [verifyToken, checkPostStatus], async (req, res) =>
         }
 
         const updatedPost = await post.save();
-        res.json(updatedPost);
+        const populatedPost = await Post.findById(updatedPost._id)
+            .populate('author', '_id username')
+            .populate('topics', 'name')
+            .populate('likes', '_id username')
+            .populate('dislikes', '_id username')
+            .populate({
+                path: 'comments',
+                populate: {
+                    path: 'author',
+                    select: '_id username'
+                }
+            });
+        res.json(addTimeLeftToPost(populatedPost));
     } catch (error) {
         res.status(400).json({ message: error.message });
     }
 });
 
 // Dislike a post
-router.post('/:postId/dislike', [verifyToken, checkPostStatus], async (req, res) => {
+router.patch('/:postId/dislike', [verifyToken, checkPostStatus], async (req, res) => {
     try {
         const post = await Post.findById(req.params.postId);
         const userId = req.user._id;
@@ -154,9 +192,154 @@ router.post('/:postId/dislike', [verifyToken, checkPostStatus], async (req, res)
         }
 
         const updatedPost = await post.save();
-        res.json(updatedPost);
+        const populatedPost = await Post.findById(updatedPost._id)
+            .populate('author', '_id username')
+            .populate('topics', 'name')
+            .populate('likes', '_id username')
+            .populate('dislikes', '_id username')
+            .populate({
+                path: 'comments',
+                populate: {
+                    path: 'author',
+                    select: '_id username'
+                }
+            });
+        res.json(addTimeLeftToPost(populatedPost));
     } catch (error) {
         res.status(400).json({ message: error.message });
+    }
+});
+
+// Get posts by topic ID (can be filtered by status)
+router.get('/topics/:topicId', verifyToken, async (req, res) => {
+    try {
+        const { status } = req.query; // Optional query parameter for filtering by status
+        const query = { topics: req.params.topicId };
+        
+        if (status && ['live', 'expired'].includes(status)) {
+            query.status = status;
+        }
+
+        const posts = await Post.find(query)
+            .populate('author', '_id username')
+            .populate('topics', 'name')
+            .populate('likes', '_id username')
+            .populate('dislikes', '_id username')
+            .populate({
+                path: 'comments',
+                populate: {
+                    path: 'author',
+                    select: '_id username'
+                }
+            });
+
+        // Add time left for each post
+        const postsWithTimeLeft = posts.map(post => {
+            const timeLeft = post.expiresAt - new Date();
+            return {
+                ...post.toObject(),
+                timeLeftMs: Math.max(0, timeLeft),
+                timeLeftHuman: timeLeft > 0 ? 
+                    Math.floor(timeLeft / (1000 * 60)) + ' minutes' : 
+                    'Expired'
+            };
+        });
+
+        res.json(postsWithTimeLeft);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// Get most active post by topic (highest engagement)
+router.get('/topics/:topicId/active', verifyToken, async (req, res) => {
+    try {
+        const posts = await Post.find({
+            topics: req.params.topicId,
+            // status: 'live'
+        })
+            .populate('author', '_id username')
+            .populate('topics', 'name')
+            .populate('likes', '_id username')
+            .populate('dislikes', '_id username')
+            .populate({
+                path: 'comments',
+                populate: {
+                    path: 'author',
+                    select: '_id username'
+                }
+            });
+
+        if (posts.length === 0) {
+            return res.status(404).json({ message: 'No active posts found for this topic' });
+        }
+
+        // Calculate engagement score and add time left info for each post
+        const postsWithEngagement = posts.map(post => ({
+            ...post.toObject(),
+            engagementScore: post.likes.length + post.dislikes.length + post.comments.length,
+            timeLeftMs: Math.max(0, post.expiresAt - new Date()),
+            timeLeftHuman: Math.max(0, Math.floor((post.expiresAt - new Date()) / (1000 * 60))) + ' minutes'
+        }));
+
+        // Get the post with highest engagement score
+        const mostActivePost = postsWithEngagement.reduce((prev, current) => 
+            (prev.engagementScore > current.engagementScore) ? prev : current
+        );
+
+        res.json(mostActivePost);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// Get history of expired posts by topic
+router.get('/topics/:topicId/history', verifyToken, async (req, res) => {
+    try {
+        const expiredPosts = await Post.find({
+            topics: req.params.topicId,
+            status: 'expired'
+        })
+            .populate('author', '_id username')
+            .populate('topics', 'name')
+            .populate('likes', '_id username')
+            .populate('dislikes', '_id username')
+            .populate({
+                path: 'comments',
+                populate: {
+                    path: 'author',
+                    select: '_id username'
+                }
+            })
+            .sort({ expiresAt: -1 }); // Sort by expiration date, newest first
+
+        const postsWithInteractions = expiredPosts.map(post => ({
+            ...post.toObject(),
+            interactions: {
+                totalLikes: post.likes.length,
+                totalDislikes: post.dislikes.length,
+                totalComments: post.comments.length,
+                details: {
+                    likes: post.likes.map(user => ({
+                        user: user.username,
+                        timestamp: post.createdAt
+                    })),
+                    dislikes: post.dislikes.map(user => ({
+                        user: user.username,
+                        timestamp: post.createdAt
+                    })),
+                    comments: post.comments.map(comment => ({
+                        user: comment.author.username,
+                        message: comment.message,
+                        timestamp: comment.createdAt
+                    }))
+                }
+            }
+        }));
+
+        res.json(postsWithInteractions);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
     }
 });
 

@@ -63,18 +63,36 @@ Piazza is a social media platform designed for users to create posts, comment, l
 - **GET /api/v1/posts/:postId**: Retrieve a specific post by ID
 - **POST /api/v1/posts**: Create a new post
 - **POST /api/v1/posts/:postId/comment**: Add a comment to a post
-- **POST /api/v1/posts/:postId/like**: Like a post
-- **POST /api/v1/posts/:postId/dislike**: Dislike a post
+- **PATCH /api/v1/posts/:postId/like**: Like a post
+- **PATCH /api/v1/posts/:postId/dislike**: Dislike a post
 
 ### Topics
 
 - **GET /api/v1/topics**: Retrieve all topics
 - **POST /api/v1/topics**: Create a new topic
 
+
+### Posts by Topic
+
+- **GET /api/v1/posts/topics/:topicId**: Get all posts for a specific topic
+  - Optional query parameter `status` to filter by 'live' or 'expired' posts
+- **GET /api/v1/posts/topics/:topicId/active**: Get most active posts for a topic (sorted by engagement)
+- **GET /api/v1/posts/topics/:topicId/history**: Get history of expired posts for a topic
+
 ## Middleware
 
 - **verifyToken**: Middleware to verify JWT tokens for protected routes.
 - **checkPostStatus**: Middleware to check if a post is expired before allowing interactions.
+
+
+Each post response includes:
+- Post content and metadata
+- Author information
+- Topic information
+- Likes and dislikes with user details
+- Comments with author details
+- Time left until expiration (in milliseconds and human-readable format)
+- Post status (live/expired)
 
 ## Contributing
 
