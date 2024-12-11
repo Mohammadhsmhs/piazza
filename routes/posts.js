@@ -142,6 +142,11 @@ router.patch('/:postId/like', [verifyToken, checkPostStatus], async (req, res) =
         const post = await Post.findById(req.params.postId);
         const userId = req.user._id;
 
+        // Check if user is the post author
+        if (post.author.toString() === userId.toString()) {
+            return res.status(403).json({ message: "You cannot like your own post" });
+        }
+
         // Remove from dislikes if present
         if (post.dislikes.includes(userId)) {
             post.dislikes = post.dislikes.filter(id => id.toString() !== userId.toString());
@@ -178,6 +183,11 @@ router.patch('/:postId/dislike', [verifyToken, checkPostStatus], async (req, res
     try {
         const post = await Post.findById(req.params.postId);
         const userId = req.user._id;
+
+        // Check if user is the post author
+        if (post.author.toString() === userId.toString()) {
+            return res.status(403).json({ message: "You cannot dislike your own post" });
+        }
 
         // Remove from likes if present
         if (post.likes.includes(userId)) {
