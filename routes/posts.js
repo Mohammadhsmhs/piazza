@@ -70,7 +70,7 @@ router.get('/:postId', verifyToken, async (req, res) => {
 });
 
 // Create a new post
-router.post('/create', verifyToken, async (req, res) => {
+router.post('/', verifyToken, async (req, res) => {
     try {
 
         // Validate the post data
